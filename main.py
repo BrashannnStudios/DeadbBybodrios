@@ -149,7 +149,7 @@ async def get_tickets_config(guild_id: int) -> dict:
         "panel_channel_id": None,
         "message": "Selecciona una categoría para abrir un ticket.",
         "color": SYSTEM_COLOR,
-        "footer": "Sistema de Tickets • Dead by Bodrios",
+        "footer": "Dead by Bodrios",
         "image": None,
         "categories": ["Soporte General", "Reportes", "Donaciones"],
         "open_type": "buttons"
@@ -191,10 +191,6 @@ async def add_auto_warn(guild: discord.Guild, member: discord.Member, reason: st
     doc = await bot.db.warns.find_one({"guild_id": guild.id, "user_id": member.id})
     total = len(doc.get("warns", [])) if doc else 1
 
-    if total >= 3:
-        # Convertir a warn normal ya está hecho; opcionalmente aplicar sanción extra
-        pass
-
     log_embed = discord.Embed(
         title=f"{AVISO} Advertencia automática",
         color=SYSTEM_COLOR,
@@ -203,6 +199,7 @@ async def add_auto_warn(guild: discord.Guild, member: discord.Member, reason: st
     log_embed.add_field(name="Usuario", value=f"{member} (`{member.id}`)", inline=True)
     log_embed.add_field(name="Razón", value=reason, inline=True)
     log_embed.add_field(name="Total", value=str(total), inline=True)
+    log_embed.set_footer(text="Dead by Bodrios")
     await send_log(guild, log_embed)
 
     try:
@@ -211,7 +208,7 @@ async def add_auto_warn(guild: discord.Guild, member: discord.Member, reason: st
             description=f"Has recibido una advertencia automática.\n**Razón:** {reason}\n**Total:** {total}",
             color=SYSTEM_COLOR
         )
-        dm.set_footer(text="Staff Team • Dead by Bodrios")
+        dm.set_footer(text="Dead by Bodrios")
         await member.send(embed=dm)
     except Exception:
         pass
@@ -220,11 +217,8 @@ async def add_auto_warn(guild: discord.Guild, member: discord.Member, reason: st
 @tasks.loop(seconds=10)
 async def rotate_presence():
     activities = [
-        discord.Activity(type=discord.ActivityType.watching, name="Dead by Bodrios"),
-        discord.Activity(type=discord.ActivityType.listening, name="tickets y moderación"),
-        discord.Game(name="?cmds | /welcome-setup"),
-        discord.Activity(type=discord.ActivityType.competing, name=f"{len(bot.guilds)} servidores"),
-        discord.Activity(type=discord.ActivityType.watching, name="el servidor"),
+        discord.Activity(type=discord.ActivityType.watching, name="↪Dead by Bodrios"),
+        discord.Activity(type=discord.ActivityType.watching, name="↪Dev: Supskevv!"),
     ]
     activity = activities[rotate_presence.current_loop % len(activities)]
     await bot.change_presence(activity=activity, status=discord.Status.online)
@@ -271,7 +265,7 @@ async def on_member_join(member: discord.Member):
 
     description = replace_vars(config.get("message", ""), member)
     color = config.get("color", SYSTEM_COLOR)
-    footer = replace_vars(config.get("footer", ""), member)
+    footer = replace_vars(config.get("footer", "Dead by Bodrios"), member)
     image = config.get("image")
     recommended = config.get("recommended_channels", [])
 
@@ -328,7 +322,6 @@ async def on_message(message: discord.Message):
         now = datetime.now(timezone.utc).timestamp()
         tracker = bot.flood_tracker[message.guild.id][message.author.id]
         tracker.append(now)
-        # Limpiar antiguos
         while tracker and now - tracker[0] > seconds:
             tracker.popleft()
         if len(tracker) >= limit:
@@ -337,13 +330,12 @@ async def on_message(message: discord.Message):
                     await message.delete()
                 except Exception:
                     pass
-                # Borrar los últimos mensajes del usuario (simple)
                 try:
                     def check(m):
                         return m.author.id == message.author.id and (datetime.now(timezone.utc).timestamp() - m.created_at.timestamp()) < seconds + 2
-                    deleted = await message.channel.purge(limit=limit + 2, check=check)
+                    await message.channel.purge(limit=limit + 2, check=check)
                 except Exception:
-                    deleted = []
+                    pass
                 await add_auto_warn(message.guild, message.author, f"Flood ({limit} mensajes en {seconds}s)")
                 try:
                     await message.channel.send(
@@ -386,7 +378,6 @@ async def on_command_error(ctx: commands.Context, error: commands.CommandError):
             color=SYSTEM_COLOR
         ), delete_after=10)
     else:
-        # Silenciar otros errores comunes
         pass
 
 # ==================== WELCOME SETUP ====================
@@ -413,7 +404,7 @@ class WelcomeFooterModal(discord.ui.Modal, title="Footer"):
         self.view = view
         self.footer_input = discord.ui.TextInput(
             label="Footer (soporta variables)",
-            default=view.config.get("footer", ""),
+            default=view.config.get("footer", "Dead by Bodrios"),
             max_length=2048,
             required=False
         )
@@ -479,7 +470,7 @@ class WelcomeSetupView(discord.ui.View):
         rec = self.config.get("recommended_channels", [])
         rec_text = "\n".join(f"• <#{c}>" for c in rec) if rec else "*Ninguno*"
         embed.add_field(name="Canales recomendados", value=rec_text, inline=False)
-        embed.set_footer(text="Los cambios se guardan al pulsar Guardar")
+        embed.set_footer(text="Dead by Bodrios")
         return embed
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -511,7 +502,6 @@ class WelcomeSetupView(discord.ui.View):
 
     @discord.ui.button(label="Añadir canal recomendado", style=discord.ButtonStyle.secondary, row=2)
     async def btn_add_rec(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Usamos un select temporal
         view = discord.ui.View(timeout=60)
         select = discord.ui.ChannelSelect(placeholder="Canal recomendado", channel_types=[discord.ChannelType.text])
 
@@ -537,7 +527,7 @@ class WelcomeSetupView(discord.ui.View):
         description = replace_vars(self.config.get("message", ""), member)
         embed = discord.Embed(description=description, color=self.config.get("color", SYSTEM_COLOR))
         embed.set_thumbnail(url=member.display_avatar.url)
-        footer = replace_vars(self.config.get("footer", ""), member)
+        footer = replace_vars(self.config.get("footer", "Dead by Bodrios"), member)
         if footer:
             embed.set_footer(text=footer)
         if self.config.get("image"):
@@ -610,6 +600,7 @@ class BotSetupView(discord.ui.View):
             ),
             inline=False
         )
+        embed.set_footer(text="Dead by Bodrios")
         return embed
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -716,7 +707,7 @@ class TicketFooterModal(discord.ui.Modal, title="Footer"):
     def __init__(self, view: "TicketsSetupView"):
         super().__init__()
         self.view = view
-        self.footer = discord.ui.TextInput(label="Footer", default=view.config.get("footer", ""), required=False)
+        self.footer = discord.ui.TextInput(label="Footer", default=view.config.get("footer", "Dead by Bodrios"), required=False)
         self.add_item(self.footer)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -784,6 +775,7 @@ class TicketsSetupView(discord.ui.View):
         embed.add_field(name="Tipo de apertura", value=self.config.get("open_type", "buttons").upper(), inline=True)
         embed.add_field(name="Mensaje", value=self.config.get("message", "")[:150], inline=False)
         embed.add_field(name="Categorías", value=", ".join(self.config.get("categories", [])), inline=False)
+        embed.set_footer(text="Dead by Bodrios")
         return embed
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -846,7 +838,6 @@ class TicketsSetupView(discord.ui.View):
         )
         bot.tickets_configs[interaction.guild.id] = self.config
 
-        # Enviar panel
         channel = interaction.guild.get_channel(self.config["panel_channel_id"])
         if not channel:
             await interaction.response.send_message(f"{DENEGADO} Canal del panel no encontrado.", ephemeral=True)
@@ -881,11 +872,10 @@ class TicketsSetupView(discord.ui.View):
         )
         self.stop()
 
-# Views de apertura de tickets
 class TicketButtonsView(discord.ui.View):
     def __init__(self, categories: List[str]):
         super().__init__(timeout=None)
-        for i, cat in enumerate(categories[:5]):  # máx 5 botones
+        for i, cat in enumerate(categories[:5]):
             button = discord.ui.Button(label=cat, style=discord.ButtonStyle.primary, custom_id=f"ticket_btn:{cat}")
             button.callback = self.make_callback(cat)
             self.add_item(button)
@@ -914,7 +904,6 @@ async def create_ticket(interaction: discord.Interaction, category: str):
         await interaction.response.send_message(f"{DENEGADO} Sistema de tickets no configurado.", ephemeral=True)
         return
 
-    # Evitar tickets duplicados abiertos
     existing = await bot.db.tickets.find_one({
         "guild_id": interaction.guild.id,
         "user_id": interaction.user.id,
@@ -932,7 +921,6 @@ async def create_ticket(interaction: discord.Interaction, category: str):
         interaction.guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True)
     }
 
-    # Añadir staff roles
     bot_config = await get_bot_config(interaction.guild.id)
     for rid in bot_config.get("staff_roles", []) + bot_config.get("admin_roles", []):
         role = interaction.guild.get_role(rid)
@@ -1050,7 +1038,6 @@ async def tickets_setup(interaction: discord.Interaction):
 @bot.event
 async def setup_hook():
     bot.add_view(TicketControlView())
-    # Las views de apertura se re-crean al enviar el panel; los custom_id permiten persistencia parcial
 
 # ==================== START ====================
 keep_alive()
