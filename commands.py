@@ -4,10 +4,8 @@ from datetime import datetime, timedelta, timezone
 import re
 from typing import Optional, Union
 
-# Color de sistema
 SYSTEM_COLOR = 0xcef3f1
 
-# Emojis
 RELOJ = "<:RelojEmoji:1544417450852880434>"
 RELOJ_ARENA = "<:RelojArenaEmoji:1544417426375053343>"
 PLUMA = "<:PlumaEmoji:1544417398113968328>"
@@ -18,7 +16,6 @@ ACEPTAR = "<:Aceptar:1544417278563586138>"
 
 
 def parse_time(time_str: str) -> Optional[timedelta]:
-    """Parsea formatos: 30s, 5m, 2h, 1d, 1w"""
     match = re.fullmatch(r"(\d+)([smhdw])", time_str.lower())
     if not match:
         return None
@@ -28,7 +25,6 @@ def parse_time(time_str: str) -> Optional[timedelta]:
 
 
 def is_staff_or_admin(member: discord.Member, bot) -> bool:
-    """Verifica si el miembro tiene rol de staff o admin configurado."""
     config = bot.bot_configs.get(member.guild.id, {})
     staff_roles = set(config.get("staff_roles", []))
     admin_roles = set(config.get("admin_roles", []))
@@ -44,7 +40,6 @@ def is_admin(member: discord.Member, bot) -> bool:
 
 
 async def send_dm_sanction(user: discord.User, action: str, reason: str, duration: str = None, guild_name: str = None):
-    """Envía DM profesional sin revelar el moderador."""
     embed = discord.Embed(
         title=f"{AVISO} Sanción recibida",
         color=SYSTEM_COLOR,
@@ -56,7 +51,7 @@ async def send_dm_sanction(user: discord.User, action: str, reason: str, duratio
     embed.add_field(name="Razón", value=reason or "No especificada", inline=False)
     if guild_name:
         embed.add_field(name="Servidor", value=guild_name, inline=False)
-    embed.set_footer(text="Staff Team • Dead by Bodrios")
+    embed.set_footer(text="Dead by Bodrios")
     try:
         await user.send(embed=embed)
     except discord.Forbidden:
@@ -64,7 +59,6 @@ async def send_dm_sanction(user: discord.User, action: str, reason: str, duratio
 
 
 async def log_action(bot, guild: discord.Guild, embed: discord.Embed):
-    """Envía log al canal configurado."""
     config = bot.bot_configs.get(guild.id, {})
     log_channel_id = config.get("log_channel")
     if log_channel_id:
@@ -80,7 +74,6 @@ class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # ==================== LOCK / UNLOCK ====================
     @commands.command(name="lock")
     @commands.guild_only()
     async def lock(self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None):
@@ -108,6 +101,7 @@ class Moderation(commands.Cog):
         )
         log_embed.add_field(name="Canal", value=channel.mention, inline=True)
         log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
+        log_embed.set_footer(text="Dead by Bodrios")
         await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="unlock")
@@ -137,9 +131,9 @@ class Moderation(commands.Cog):
         )
         log_embed.add_field(name="Canal", value=channel.mention, inline=True)
         log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
+        log_embed.set_footer(text="Dead by Bodrios")
         await log_action(self.bot, ctx.guild, log_embed)
 
-    # ==================== BAN / TEMPBAN / UNBAN ====================
     @commands.command(name="ban")
     @commands.guild_only()
     async def ban(self, ctx: commands.Context, member: discord.Member, *, reason: str = "No especificada"):
@@ -171,6 +165,7 @@ class Moderation(commands.Cog):
         log_embed.add_field(name="Usuario", value=f"{member} (`{member.id}`)", inline=True)
         log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
         log_embed.add_field(name="Razón", value=reason, inline=False)
+        log_embed.set_footer(text="Dead by Bodrios")
         await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="tempban")
@@ -191,7 +186,6 @@ class Moderation(commands.Cog):
         await send_dm_sanction(member, "Ban temporal", reason, duration=time, guild_name=ctx.guild.name)
         await member.ban(reason=f"{ctx.author} | Tempban {time} | {reason}")
 
-        # Guardar unban programado en MongoDB
         unban_at = datetime.now(timezone.utc) + duration
         await self.bot.db.tempbans.update_one(
             {"guild_id": ctx.guild.id, "user_id": member.id},
@@ -214,6 +208,7 @@ class Moderation(commands.Cog):
         log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
         log_embed.add_field(name="Duración", value=time, inline=True)
         log_embed.add_field(name="Razón", value=reason, inline=False)
+        log_embed.set_footer(text="Dead by Bodrios")
         await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="unban")
@@ -250,9 +245,9 @@ class Moderation(commands.Cog):
         log_embed.add_field(name="Usuario ID", value=str(user_id), inline=True)
         log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
         log_embed.add_field(name="Razón", value=reason, inline=False)
+        log_embed.set_footer(text="Dead by Bodrios")
         await log_action(self.bot, ctx.guild, log_embed)
 
-    # ==================== KICK ====================
     @commands.command(name="kick")
     @commands.guild_only()
     async def kick(self, ctx: commands.Context, member: discord.Member, *, reason: str = "No especificada"):
@@ -284,9 +279,9 @@ class Moderation(commands.Cog):
         log_embed.add_field(name="Usuario", value=f"{member} (`{member.id}`)", inline=True)
         log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
         log_embed.add_field(name="Razón", value=reason, inline=False)
+        log_embed.set_footer(text="Dead by Bodrios")
         await log_action(self.bot, ctx.guild, log_embed)
 
-    # ==================== MUTE / TIMEOUT / UNMUTE ====================
     @commands.command(name="mute", aliases=["timeout"])
     @commands.guild_only()
     async def mute(self, ctx: commands.Context, member: discord.Member, time: str, *, reason: str = "No especificada"):
@@ -326,6 +321,7 @@ class Moderation(commands.Cog):
         log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
         log_embed.add_field(name="Duración", value=time, inline=True)
         log_embed.add_field(name="Razón", value=reason, inline=False)
+        log_embed.set_footer(text="Dead by Bodrios")
         await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="unmute")
@@ -354,9 +350,9 @@ class Moderation(commands.Cog):
         log_embed.add_field(name="Usuario", value=f"{member} (`{member.id}`)", inline=True)
         log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
         log_embed.add_field(name="Razón", value=reason, inline=False)
+        log_embed.set_footer(text="Dead by Bodrios")
         await log_action(self.bot, ctx.guild, log_embed)
 
-    # ==================== WARN SYSTEM ====================
     @commands.command(name="warn")
     @commands.guild_only()
     async def warn(self, ctx: commands.Context, member: discord.Member, *, reason: str = "No especificada"):
@@ -398,6 +394,7 @@ class Moderation(commands.Cog):
         log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
         log_embed.add_field(name="Total warns", value=str(total), inline=True)
         log_embed.add_field(name="Razón", value=reason, inline=False)
+        log_embed.set_footer(text="Dead by Bodrios")
         await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="warnings", aliases=["warns"])
@@ -428,17 +425,14 @@ class Moderation(commands.Cog):
             mod = ctx.guild.get_member(w["moderator_id"])
             mod_name = mod.mention if mod else f"`{w['moderator_id']}`"
             ts = w["timestamp"]
-            if isinstance(ts, datetime):
-                ts_str = discord.utils.format_dt(ts, "R")
-            else:
-                ts_str = "Desconocido"
+            ts_str = discord.utils.format_dt(ts, "R") if isinstance(ts, datetime) else "Desconocido"
             auto = " (Automod)" if w.get("auto") else ""
             embed.add_field(
                 name=f"#{i}{auto}",
                 value=f"**Razón:** {w['reason']}\n**Mod:** {mod_name}\n**Fecha:** {ts_str}",
                 inline=False
             )
-        embed.set_footer(text=f"Total: {len(warns)}")
+        embed.set_footer(text=f"Total: {len(warns)} • Dead by Bodrios")
         await ctx.send(embed=embed)
 
     @commands.command(name="delwarn")
@@ -512,7 +506,6 @@ class Moderation(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    # ==================== NOTES ====================
     @commands.command(name="note")
     @commands.guild_only()
     async def note(self, ctx: commands.Context, member: discord.Member, *, content: str):
@@ -571,6 +564,7 @@ class Moderation(commands.Cog):
                 value=f"{n['content']}\n— {mod_name} • {ts_str}",
                 inline=False
             )
+        embed.set_footer(text="Dead by Bodrios")
         await ctx.send(embed=embed)
 
     @commands.command(name="delnote")
@@ -608,7 +602,6 @@ class Moderation(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    # ==================== SLOWMODE / CLEAR ====================
     @commands.command(name="slowmode")
     @commands.guild_only()
     async def slowmode(self, ctx: commands.Context, seconds: int, channel: Optional[discord.TextChannel] = None):
@@ -673,7 +666,7 @@ class Utility(commands.Cog):
             color=SYSTEM_COLOR,
             timestamp=datetime.now(timezone.utc)
         )
-        embed.set_footer(text=f"Mensaje del Staff Team • {ctx.guild.name}")
+        embed.set_footer(text="Dead by Bodrios")
         try:
             await member.send(embed=embed)
             await ctx.send(embed=discord.Embed(
@@ -760,7 +753,7 @@ class Utility(commands.Cog):
         embed.add_field(name="Se unió", value=discord.utils.format_dt(member.joined_at, "R") if member.joined_at else "Desconocido", inline=True)
         roles = [r.mention for r in member.roles if r != ctx.guild.default_role]
         embed.add_field(name=f"Roles [{len(roles)}]", value=" ".join(roles) if roles else "Ninguno", inline=False)
-        embed.set_footer(text=f"Solicitado por {ctx.author}")
+        embed.set_footer(text="Dead by Bodrios")
         await ctx.send(embed=embed)
 
     @commands.command(name="cmds", aliases=["commands", "help"])
@@ -770,45 +763,50 @@ class Utility(commands.Cog):
             description="Prefijo: `?` (no distingue mayúsculas)",
             color=SYSTEM_COLOR
         )
+        
         embed.add_field(
             name="Moderación",
             value=(
-                "`?lock` / `?unlock`\n"
-                "`?ban` / `?tempban` / `?unban`\n"
+                "`?lock` `?unlock`\n"
+                "`?ban` `?tempban` `?unban`\n"
                 "`?kick`\n"
-                "`?mute` / `?unmute` / `?timeout`\n"
-                "`?warn` / `?warnings` / `?delwarn` / `?editreason`\n"
-                "`?note` / `?viewnotes` / `?delnote`\n"
-                "`?slowmode` / `?clear`"
+                "`?mute` `?unmute` `?timeout`\n"
+                "`?warn` `?warnings` `?delwarn` `?editreason`\n"
+                "`?note` `?viewnotes` `?delnote`\n"
+                "`?slowmode` `?clear`"
             ),
-            inline=False
+            inline=True
         )
+        
         embed.add_field(
             name="Utilidad",
             value=(
                 "`?dm`\n"
-                "`?addrole` / `?removerole`\n"
+                "`?addrole` `?removerole`\n"
                 "`?nick`\n"
                 "`?userinfo`\n"
                 "`?cmds`"
             ),
-            inline=False
+            inline=True
         )
+        
         embed.add_field(
             name="Tickets",
             value=(
-                "`?adduser` / `?removeuser`\n"
-                "`?close` / `?delete`\n"
+                "`?adduser` `?removeuser`\n"
+                "`?close` `?delete`\n"
                 "`?rename`"
             ),
-            inline=False
+            inline=True
         )
+        
         embed.add_field(
             name="Configuración (Slash)",
-            value="`/welcome-setup` • `/bot-setup` • `/tickets-setup`",
+            value="`/welcome-setup`  `/bot-setup`  `/tickets-setup`",
             inline=False
         )
-        embed.set_footer(text="Dead by Bodrios • Sistema de moderación profesional")
+        
+        embed.set_footer(text="Dead by Bodrios")
         await ctx.send(embed=embed)
 
 
@@ -877,7 +875,6 @@ class Tickets(commands.Cog):
             ))
 
         await ctx.channel.set_permissions(ctx.guild.default_role, view_channel=False)
-        # Cerrar permisos del creador también (opcional, se puede mantener)
         await ctx.send(embed=discord.Embed(
             description=f"{ACEPTAR} Ticket cerrado por {ctx.author.mention}. Usa `?delete` para eliminarlo.",
             color=SYSTEM_COLOR
