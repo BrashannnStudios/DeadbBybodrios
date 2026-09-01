@@ -217,8 +217,8 @@ async def add_auto_warn(guild: discord.Guild, member: discord.Member, reason: st
 @tasks.loop(seconds=10)
 async def rotate_presence():
     activities = [
-        discord.Activity(type=discord.ActivityType.watching, name="↪Dead by Bodrios"),
-        discord.Activity(type=discord.ActivityType.watching, name="↪Dev: Supskevv!"),
+        discord.Activity(type=discord.ActivityType.watching, name="↪ Dead by Bodrios"),
+        discord.Activity(type=discord.ActivityType.watching, name="↪ Dev: Supskevv!"),
     ]
     activity = activities[rotate_presence.current_loop % len(activities)]
     await bot.change_presence(activity=activity, status=discord.Status.online)
