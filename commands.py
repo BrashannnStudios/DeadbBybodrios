@@ -756,59 +756,61 @@ class Utility(commands.Cog):
         embed.set_footer(text="Dead by Bodrios")
         await ctx.send(embed=embed)
 
-    @commands.command(name="cmds", aliases=["commands", "help"])
-    async def cmds(self, ctx: commands.Context):
-        embed = discord.Embed(
-            title=f"{PLUMA} Comandos de Dead by Bodrios",
-            description="Prefijo: `?` (no distingue mayúsculas)",
-            color=SYSTEM_COLOR
-        )
-        
-        embed.add_field(
-            name="Moderación",
-            value=(
-                "`?lock` `?unlock`\n"
-                "`?ban` `?tempban` `?unban`\n"
-                "`?kick`\n"
-                "`?mute` `?unmute` `?timeout`\n"
-                "`?warn` `?warnings` `?delwarn` `?editreason`\n"
-                "`?note` `?viewnotes` `?delnote`\n"
-                "`?slowmode` `?clear`"
-            ),
-            inline=True
-        )
-        
-        embed.add_field(
-            name="Utilidad",
-            value=(
-                "`?dm`\n"
-                "`?addrole` `?removerole`\n"
-                "`?nick`\n"
-                "`?userinfo`\n"
-                "`?cmds`"
-            ),
-            inline=True
-        )
-        
-        embed.add_field(
-            name="Tickets",
-            value=(
-                "`?adduser` `?removeuser`\n"
-                "`?close` `?delete`\n"
-                "`?rename`"
-            ),
-            inline=True
-        )
-        
-        embed.add_field(
-            name="Configuración (Slash)",
-            value="`/welcome-setup`  `/bot-setup`  `/tickets-setup`",
-            inline=False
-        )
-        
-        embed.set_footer(text="Dead by Bodrios")
-        await ctx.send(embed=embed)
-
+   @commands.command(name="cmds", aliases=["commands", "help"])
+async def cmds(self, ctx: commands.Context):
+    embed = discord.Embed(
+        title=f"{PLUMA} Comandos de Dead by Bodrios",
+        description="Prefijo: `?` (no distingue mayúsculas)",
+        color=SYSTEM_COLOR
+    )
+    
+    embed.add_field(
+        name="Moderación",
+        value=(
+            "`?lock` `?unlock`\n"
+            "`?ban` `?tempban` `?unban`\n"
+            "`?kick`\n"
+            "`?mute` `?unmute` `?timeout`\n"
+            "`?warn` `?warnings` `?delwarn` `?editreason`\n"
+            "`?note` `?viewnotes` `?delnote`\n"
+            "`?slowmode` `?clear`"
+        ),
+        inline=True
+    )
+    
+    embed.add_field(
+        name="Utilidad",
+        value=(
+            "`?dm`\n"
+            "`?addrole` `?removerole`\n"
+            "`?nick`\n"
+            "`?userinfo`\n"
+            "`?cmds`"
+        ),
+        inline=True
+    )
+    
+    embed.add_field(
+        name="Tickets",
+        value=(
+            "`?adduser` `?removeuser`\n"
+            "`?close` `?delete`\n"
+            "`?rename`"
+        ),
+        inline=True
+    )
+    
+    embed.add_field(
+        name="Configuración + Giveaways (Slash)",
+        value=(
+            "`/welcome-setup`  `/bot-setup`  `/tickets-setup`\n"
+            "`/giveaway-create`  `/giveaway-end`  `/giveaway-reroll`  `/giveaway-list`"
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="Dead by Bodrios")
+    await ctx.send(embed=embed)
 
 class Tickets(commands.Cog):
     def __init__(self, bot):
