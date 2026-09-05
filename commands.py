@@ -32,6 +32,26 @@ def is_staff_or_admin(member: discord.Member, bot) -> bool:
     return bool(member_roles & (staff_roles | admin_roles)) or member.guild_permissions.administrator
 
 
+def can_moderate(author: discord.Member, target: discord.Member, bot) -> bool:
+    """Verifica si el autor puede moderar al target (jerarquía + roles de admin)."""
+    if author.guild_permissions.administrator:
+        return True
+
+    config = bot.bot_configs.get(author.guild.id, {})
+    admin_roles = set(config.get("admin_roles", []))
+
+    # Si el target tiene un rol de Admin configurado → no se puede moderar
+    target_roles = {r.id for r in target.roles}
+    if target_roles & admin_roles:
+        return False
+
+    # Jerarquía normal de Discord
+    if target.top_role >= author.top_role:
+        return False
+
+    return True
+
+
 async def send_dm_sanction(user: discord.User, action: str, reason: str, duration: str = None, guild_name: str = None):
     embed = discord.Embed(
         title=f"{AVISO} Sanción recibida",
@@ -77,11 +97,6 @@ class Moderation(commands.Cog):
         overwrite.send_messages = False
         await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
         await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} Canal {channel.mention} bloqueado.", color=SYSTEM_COLOR))
-        log_embed = discord.Embed(title=f"{AVISO} Canal bloqueado", color=SYSTEM_COLOR, timestamp=datetime.now(timezone.utc))
-        log_embed.add_field(name="Canal", value=channel.mention, inline=True)
-        log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
-        log_embed.set_footer(text="Dead by Bodrios")
-        await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="unlock")
     @commands.guild_only()
@@ -93,18 +108,13 @@ class Moderation(commands.Cog):
         overwrite.send_messages = None
         await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
         await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} Canal {channel.mention} desbloqueado.", color=SYSTEM_COLOR))
-        log_embed = discord.Embed(title=f"{AVISO} Canal desbloqueado", color=SYSTEM_COLOR, timestamp=datetime.now(timezone.utc))
-        log_embed.add_field(name="Canal", value=channel.mention, inline=True)
-        log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
-        log_embed.set_footer(text="Dead by Bodrios")
-        await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="ban")
     @commands.guild_only()
     async def ban(self, ctx: commands.Context, member: discord.Member, *, reason: str = "No especificada"):
         if not is_staff_or_admin(ctx.author, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No tienes permisos.", color=SYSTEM_COLOR))
-        if member.top_role >= ctx.author.top_role and not ctx.author.guild_permissions.administrator:
+        if not can_moderate(ctx.author, member, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No puedes banear a alguien con rol igual o superior.", color=SYSTEM_COLOR))
         await send_dm_sanction(member, "Ban permanente", reason, guild_name=ctx.guild.name)
         await member.ban(reason=f"{ctx.author} | {reason}")
@@ -121,6 +131,8 @@ class Moderation(commands.Cog):
     async def tempban(self, ctx: commands.Context, member: discord.Member, time: str, *, reason: str = "No especificada"):
         if not is_staff_or_admin(ctx.author, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No tienes permisos.", color=SYSTEM_COLOR))
+        if not can_moderate(ctx.author, member, self.bot):
+            return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No puedes banear a alguien con rol igual o superior.", color=SYSTEM_COLOR))
         duration = parse_time(time)
         if not duration:
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} Formato de tiempo inválido. Usa: `30s`, `5m`, `2h`, `1d`, `1w`", color=SYSTEM_COLOR))
@@ -133,13 +145,6 @@ class Moderation(commands.Cog):
             upsert=True
         )
         await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} {member.mention} ha sido baneado temporalmente por **{time}**.\n**Razón:** {reason}", color=SYSTEM_COLOR))
-        log_embed = discord.Embed(title=f"{AVISO} Usuario baneado temporalmente", color=SYSTEM_COLOR, timestamp=datetime.now(timezone.utc))
-        log_embed.add_field(name="Usuario", value=f"{member} (`{member.id}`)", inline=True)
-        log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
-        log_embed.add_field(name="Duración", value=time, inline=True)
-        log_embed.add_field(name="Razón", value=reason, inline=False)
-        log_embed.set_footer(text="Dead by Bodrios")
-        await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="unban")
     @commands.guild_only()
@@ -153,35 +158,25 @@ class Moderation(commands.Cog):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} Ese usuario no está baneado.", color=SYSTEM_COLOR))
         await self.bot.db.tempbans.delete_one({"guild_id": ctx.guild.id, "user_id": user_id})
         await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} Usuario `{user_id}` desbaneado.\n**Razón:** {reason}", color=SYSTEM_COLOR))
-        log_embed = discord.Embed(title=f"{AVISO} Usuario desbaneado", color=SYSTEM_COLOR, timestamp=datetime.now(timezone.utc))
-        log_embed.add_field(name="Usuario ID", value=str(user_id), inline=True)
-        log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
-        log_embed.add_field(name="Razón", value=reason, inline=False)
-        log_embed.set_footer(text="Dead by Bodrios")
-        await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="kick")
     @commands.guild_only()
     async def kick(self, ctx: commands.Context, member: discord.Member, *, reason: str = "No especificada"):
         if not is_staff_or_admin(ctx.author, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No tienes permisos.", color=SYSTEM_COLOR))
-        if member.top_role >= ctx.author.top_role and not ctx.author.guild_permissions.administrator:
+        if not can_moderate(ctx.author, member, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No puedes expulsar a alguien con rol igual o superior.", color=SYSTEM_COLOR))
         await send_dm_sanction(member, "Expulsión (Kick)", reason, guild_name=ctx.guild.name)
         await member.kick(reason=f"{ctx.author} | {reason}")
         await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} {member.mention} ha sido expulsado.\n**Razón:** {reason}", color=SYSTEM_COLOR))
-        log_embed = discord.Embed(title=f"{AVISO} Usuario expulsado", color=SYSTEM_COLOR, timestamp=datetime.now(timezone.utc))
-        log_embed.add_field(name="Usuario", value=f"{member} (`{member.id}`)", inline=True)
-        log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
-        log_embed.add_field(name="Razón", value=reason, inline=False)
-        log_embed.set_footer(text="Dead by Bodrios")
-        await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="mute", aliases=["timeout"])
     @commands.guild_only()
     async def mute(self, ctx: commands.Context, member: discord.Member, time: str, *, reason: str = "No especificada"):
         if not is_staff_or_admin(ctx.author, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No tienes permisos.", color=SYSTEM_COLOR))
+        if not can_moderate(ctx.author, member, self.bot):
+            return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No puedes silenciar a alguien con rol igual o superior.", color=SYSTEM_COLOR))
         duration = parse_time(time)
         if not duration:
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} Formato de tiempo inválido. Usa: `30s`, `5m`, `2h`, `1d`, `1w`", color=SYSTEM_COLOR))
@@ -191,13 +186,6 @@ class Moderation(commands.Cog):
         await member.timeout(until, reason=f"{ctx.author} | {reason}")
         await send_dm_sanction(member, "Timeout (Mute)", reason, duration=time, guild_name=ctx.guild.name)
         await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} {member.mention} ha sido silenciado por **{time}**.\n**Razón:** {reason}", color=SYSTEM_COLOR))
-        log_embed = discord.Embed(title=f"{AVISO} Usuario silenciado (Timeout)", color=SYSTEM_COLOR, timestamp=datetime.now(timezone.utc))
-        log_embed.add_field(name="Usuario", value=f"{member} (`{member.id}`)", inline=True)
-        log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
-        log_embed.add_field(name="Duración", value=time, inline=True)
-        log_embed.add_field(name="Razón", value=reason, inline=False)
-        log_embed.set_footer(text="Dead by Bodrios")
-        await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="unmute")
     @commands.guild_only()
@@ -207,18 +195,14 @@ class Moderation(commands.Cog):
         await member.timeout(None, reason=f"{ctx.author} | {reason}")
         await send_dm_sanction(member, "Timeout removido", reason, guild_name=ctx.guild.name)
         await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} Se ha removido el timeout de {member.mention}.\n**Razón:** {reason}", color=SYSTEM_COLOR))
-        log_embed = discord.Embed(title=f"{AVISO} Timeout removido", color=SYSTEM_COLOR, timestamp=datetime.now(timezone.utc))
-        log_embed.add_field(name="Usuario", value=f"{member} (`{member.id}`)", inline=True)
-        log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
-        log_embed.add_field(name="Razón", value=reason, inline=False)
-        log_embed.set_footer(text="Dead by Bodrios")
-        await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="warn")
     @commands.guild_only()
     async def warn(self, ctx: commands.Context, member: discord.Member, *, reason: str = "No especificada"):
         if not is_staff_or_admin(ctx.author, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No tienes permisos.", color=SYSTEM_COLOR))
+        if not can_moderate(ctx.author, member, self.bot):
+            return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No puedes warnear a alguien con rol igual o superior.", color=SYSTEM_COLOR))
         warn_data = {
             "reason": reason,
             "moderator_id": ctx.author.id,
@@ -234,13 +218,6 @@ class Moderation(commands.Cog):
         total = len(doc.get("warns", [])) if doc else 1
         await send_dm_sanction(member, f"Advertencia ({total})", reason, guild_name=ctx.guild.name)
         await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} {member.mention} ha recibido una advertencia.\n**Razón:** {reason}\n**Total:** {total}", color=SYSTEM_COLOR))
-        log_embed = discord.Embed(title=f"{AVISO} Advertencia aplicada", color=SYSTEM_COLOR, timestamp=datetime.now(timezone.utc))
-        log_embed.add_field(name="Usuario", value=f"{member} (`{member.id}`)", inline=True)
-        log_embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
-        log_embed.add_field(name="Total warns", value=str(total), inline=True)
-        log_embed.add_field(name="Razón", value=reason, inline=False)
-        log_embed.set_footer(text="Dead by Bodrios")
-        await log_action(self.bot, ctx.guild, log_embed)
 
     @commands.command(name="warnings", aliases=["warns"])
     @commands.guild_only()
@@ -424,16 +401,36 @@ class Utility(commands.Cog):
 
     @commands.command(name="cmds", aliases=["commands", "help"])
     async def cmds(self, ctx: commands.Context):
-        embed = discord.Embed(title=f"{PLUMA} Comandos de Dead by Bodrios", description="Prefijo: `?` (no distingue mayúsculas)", color=SYSTEM_COLOR)
-        embed.add_field(name="Moderación", value="`?lock` `?unlock`\n`?ban` `?tempban` `?unban`\n`?kick`\n`?mute` `?unmute` `?timeout`\n`?warn` `?warnings` `?delwarn` `?editreason`\n`?note` `?viewnotes` `?delnote`\n`?slowmode` `?clear`", inline=True)
-        embed.add_field(name="Utilidad", value="`?dm`\n`?addrole` `?removerole`\n`?nick`\n`?userinfo`\n`?cmds`", inline=True)
-        embed.add_field(name="Tickets", value="`?adduser` `?removeuser`\n`?close` `?delete`\n`?rename`", inline=True)
-        embed.add_field(name="Configuración + Giveaways (Slash)", value="`/welcome-setup` `/bot-setup` `/tickets-setup`\n`/giveaway-create` `/giveaway-end` `/giveaway-reroll` `/giveaway-list`", inline=False)
+        embed = discord.Embed(
+            title=f"{PLUMA} Comandos de Dead by Bodrios",
+            description="Prefijo: `?` (no distingue mayúsculas)",
+            color=SYSTEM_COLOR
+        )
+        embed.add_field(
+            name="Moderación",
+            value="`?lock` `?unlock`\n`?ban` `?tempban` `?unban`\n`?kick`\n`?mute` `?unmute` `?timeout`\n`?warn` `?warnings` `?delwarn` `?editreason`\n`?note` `?viewnotes` `?delnote`\n`?slowmode` `?clear`",
+            inline=True
+        )
+        embed.add_field(
+            name="Utilidad",
+            value="`?dm`\n`?addrole` `?removerole`\n`?nick`\n`?userinfo`\n`?cmds`",
+            inline=True
+        )
+        embed.add_field(
+            name="Tickets",
+            value="`?adduser` `?removeuser`\n`?close` `?delete`\n`?rename`",
+            inline=True
+        )
+        embed.add_field(
+            name="Others",
+            value="`/welcome-setup`  `/bot-setup`  `/tickets-setup`\n`/giveaway-create`  `/giveaway-end`  `/giveaway-reroll`  `/giveaway-list`",
+            inline=False
+        )
         embed.set_footer(text="Dead by Bodrios")
         await ctx.send(embed=embed)
 
 
-class Tickets(commands.Cog):
+class TicketsPrefix(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
@@ -498,4 +495,4 @@ class Tickets(commands.Cog):
 async def setup(bot):
     await bot.add_cog(Moderation(bot))
     await bot.add_cog(Utility(bot))
-    await bot.add_cog(Tickets(bot))
+    await bot.add_cog(TicketsPrefix(bot))
