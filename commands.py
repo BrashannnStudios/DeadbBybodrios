@@ -33,23 +33,31 @@ def is_staff_or_admin(member: discord.Member, bot) -> bool:
 
 
 def can_moderate(author: discord.Member, target: discord.Member, bot) -> bool:
-    """Verifica si el autor puede moderar al target (jerarquía + roles de admin)."""
-    if author.guild_permissions.administrator:
+    """Protección estricta de jerarquía. Solo el dueño del servidor puede saltársela."""
+    if author.id == author.guild.owner_id:
         return True
 
+    # Jerarquía de roles de Discord
+    if target.top_role >= author.top_role:
+        return False
+
+    # Roles de Admin configurados en /bot-setup
     config = bot.bot_configs.get(author.guild.id, {})
     admin_roles = set(config.get("admin_roles", []))
-
-    # Si el target tiene un rol de Admin configurado → no se puede moderar
     target_roles = {r.id for r in target.roles}
     if target_roles & admin_roles:
         return False
 
-    # Jerarquía normal de Discord
-    if target.top_role >= author.top_role:
-        return False
-
     return True
+
+
+async def get_next_warn_id(bot, guild_id: int, user_id: int) -> int:
+    """Devuelve el siguiente ID permanente de warn."""
+    doc = await bot.db.warns.find_one({"guild_id": guild_id, "user_id": user_id})
+    if not doc or not doc.get("warns"):
+        return 1
+    existing_ids = [w.get("id", 0) for w in doc["warns"]]
+    return max(existing_ids) + 1 if existing_ids else 1
 
 
 async def send_dm_sanction(user: discord.User, action: str, reason: str, duration: str = None, guild_name: str = None):
@@ -203,7 +211,11 @@ class Moderation(commands.Cog):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No tienes permisos.", color=SYSTEM_COLOR))
         if not can_moderate(ctx.author, member, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No puedes warnear a alguien con rol igual o superior.", color=SYSTEM_COLOR))
+
+        warn_id = await get_next_warn_id(self.bot, ctx.guild.id, member.id)
+
         warn_data = {
+            "id": warn_id,
             "reason": reason,
             "moderator_id": ctx.author.id,
             "timestamp": datetime.now(timezone.utc),
@@ -214,10 +226,15 @@ class Moderation(commands.Cog):
             {"$push": {"warns": warn_data}},
             upsert=True
         )
+
         doc = await self.bot.db.warns.find_one({"guild_id": ctx.guild.id, "user_id": member.id})
         total = len(doc.get("warns", [])) if doc else 1
+
         await send_dm_sanction(member, f"Advertencia ({total})", reason, guild_name=ctx.guild.name)
-        await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} {member.mention} ha recibido una advertencia.\n**Razón:** {reason}\n**Total:** {total}", color=SYSTEM_COLOR))
+        await ctx.send(embed=discord.Embed(
+            description=f"{ACEPTAR} {member.mention} ha recibido una advertencia.\n**ID:** `{warn_id}`\n**Razón:** {reason}\n**Total:** {total}",
+            color=SYSTEM_COLOR
+        ))
 
     @commands.command(name="warnings", aliases=["warns"])
     @commands.guild_only()
@@ -225,51 +242,88 @@ class Moderation(commands.Cog):
         member = member or ctx.author
         if member != ctx.author and not is_staff_or_admin(ctx.author, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No tienes permisos.", color=SYSTEM_COLOR))
+
         doc = await self.bot.db.warns.find_one({"guild_id": ctx.guild.id, "user_id": member.id})
         warns = doc.get("warns", []) if doc else []
+
         if not warns:
             return await ctx.send(embed=discord.Embed(description=f"{LUPA} {member.mention} no tiene advertencias.", color=SYSTEM_COLOR))
+
         embed = discord.Embed(title=f"{LUPA} Advertencias de {member}", color=SYSTEM_COLOR, timestamp=datetime.now(timezone.utc))
-        for i, w in enumerate(warns, 1):
+        for w in warns:
             mod = ctx.guild.get_member(w["moderator_id"])
             mod_name = mod.mention if mod else f"`{w['moderator_id']}`"
             ts = w["timestamp"]
             ts_str = discord.utils.format_dt(ts, "R") if isinstance(ts, datetime) else "Desconocido"
             auto = " (Automod)" if w.get("auto") else ""
-            embed.add_field(name=f"#{i}{auto}", value=f"**Razón:** {w['reason']}\n**Mod:** {mod_name}\n**Fecha:** {ts_str}", inline=False)
+            embed.add_field(
+                name=f"ID `{w.get('id', '?')}`{auto}",
+                value=f"**Razón:** {w['reason']}\n**Mod:** {mod_name}\n**Fecha:** {ts_str}",
+                inline=False
+            )
         embed.set_footer(text=f"Total: {len(warns)} • Dead by Bodrios")
         await ctx.send(embed=embed)
 
     @commands.command(name="delwarn")
     @commands.guild_only()
-    async def delwarn(self, ctx: commands.Context, member: discord.Member, index: int):
+    async def delwarn(self, ctx: commands.Context, member: discord.Member, warn_id: int):
         if not is_staff_or_admin(ctx.author, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No tienes permisos.", color=SYSTEM_COLOR))
+
         doc = await self.bot.db.warns.find_one({"guild_id": ctx.guild.id, "user_id": member.id})
         if not doc or not doc.get("warns"):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} Ese usuario no tiene advertencias.", color=SYSTEM_COLOR))
+
         warns = doc["warns"]
-        if index < 1 or index > len(warns):
-            return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} Índice inválido.", color=SYSTEM_COLOR))
-        removed = warns.pop(index - 1)
-        await self.bot.db.warns.update_one({"guild_id": ctx.guild.id, "user_id": member.id}, {"$set": {"warns": warns}})
-        await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} Advertencia #{index} eliminada de {member.mention}.\n**Razón eliminada:** {removed['reason']}", color=SYSTEM_COLOR))
+        target = next((w for w in warns if w.get("id") == warn_id), None)
+
+        if not target:
+            return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No existe un warn con ID `{warn_id}`.", color=SYSTEM_COLOR))
+
+        warns = [w for w in warns if w.get("id") != warn_id]
+        await self.bot.db.warns.update_one(
+            {"guild_id": ctx.guild.id, "user_id": member.id},
+            {"$set": {"warns": warns}}
+        )
+
+        await ctx.send(embed=discord.Embed(
+            description=f"{ACEPTAR} Advertencia **ID `{warn_id}`** eliminada de {member.mention}.\n**Razón:** {target['reason']}",
+            color=SYSTEM_COLOR
+        ))
 
     @commands.command(name="editreason")
     @commands.guild_only()
-    async def editreason(self, ctx: commands.Context, member: discord.Member, index: int, *, new_reason: str):
+    async def editreason(self, ctx: commands.Context, member: discord.Member, warn_id: int, *, new_reason: str):
         if not is_staff_or_admin(ctx.author, self.bot):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No tienes permisos.", color=SYSTEM_COLOR))
+
         doc = await self.bot.db.warns.find_one({"guild_id": ctx.guild.id, "user_id": member.id})
         if not doc or not doc.get("warns"):
             return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} Ese usuario no tiene advertencias.", color=SYSTEM_COLOR))
+
         warns = doc["warns"]
-        if index < 1 or index > len(warns):
-            return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} Índice inválido.", color=SYSTEM_COLOR))
-        old = warns[index - 1]["reason"]
-        warns[index - 1]["reason"] = new_reason
-        await self.bot.db.warns.update_one({"guild_id": ctx.guild.id, "user_id": member.id}, {"$set": {"warns": warns}})
-        await ctx.send(embed=discord.Embed(description=f"{ACEPTAR} Razón de la advertencia #{index} actualizada.\n**Antes:** {old}\n**Ahora:** {new_reason}", color=SYSTEM_COLOR))
+        found = False
+        old_reason = None
+
+        for w in warns:
+            if w.get("id") == warn_id:
+                old_reason = w["reason"]
+                w["reason"] = new_reason
+                found = True
+                break
+
+        if not found:
+            return await ctx.send(embed=discord.Embed(description=f"{DENEGADO} No existe un warn con ID `{warn_id}`.", color=SYSTEM_COLOR))
+
+        await self.bot.db.warns.update_one(
+            {"guild_id": ctx.guild.id, "user_id": member.id},
+            {"$set": {"warns": warns}}
+        )
+
+        await ctx.send(embed=discord.Embed(
+            description=f"{ACEPTAR} Razón del warn **ID `{warn_id}`** actualizada.\n**Antes:** {old_reason}\n**Ahora:** {new_reason}",
+            color=SYSTEM_COLOR
+        ))
 
     @commands.command(name="note")
     @commands.guild_only()
